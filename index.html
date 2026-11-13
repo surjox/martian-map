@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0e14">
+  <title>3D Mars Globe Command Center</title>
+  <link rel="stylesheet" href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
+  <script defer src="data-services.js"></script>
+  <script defer src="science-data.js"></script>
+  <script defer src="terrain-model.js"></script>
+  <script defer src="weather.js"></script>
+  <script defer src="app.js"></script>
+  <script defer src="marswalk-planner.js"></script>
+  <script defer src="marswalk-navigation.js"></script>
+  <script defer src="marswalk-terrain.js"></script>
+  <script defer src="marswalk.js"></script>
+  <script defer src="science-explorer.js"></script>
+  <script defer src="solar-system.js"></script>
+  <script defer src="media-library.js"></script>
+  <script defer src="dsn-now.js"></script>
+</head>
+<body>
+  <div id="cesiumContainer" role="region" aria-label="Interactive three-dimensional Mars globe">
+    <div id="marswalk-camera-hud" hidden>
+      <span class="marswalk-camera-label marswalk-cinematic-label">CINEMATIC VIEW</span>
+      <div id="marswalk-hud-loader" class="marswalk-hud-loader" role="status" aria-live="polite" hidden>
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span id="marswalk-hud-loader-text">Loading MOLA / THEMIS surface imagery…</span>
+      </div>
+      <div id="marswalk-flight-controls" role="toolbar" aria-label="Active flight controls" hidden>
+        <button id="marswalk-flight-pause" class="hud-btn secondary" type="button">Pause</button>
+        <button id="marswalk-flight-restart" class="hud-btn secondary" type="button">Restart</button>
+        <label class="marswalk-toolbar-speed" for="marswalk-flight-speed">Speed
+          <select id="marswalk-flight-speed" aria-label="Flight speed">
+            <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+            <option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+          </select>
+        </label>
+        <button id="marswalk-flight-stop" class="hud-btn secondary" type="button">End flight</button>
+      </div>
+      <section id="marswalk-pilot-frame" aria-label="First-person MarsWalk pilot view" hidden>
+        <span class="marswalk-camera-label">PILOT VIEW</span>
+        <div id="marswalk-pilot-canvas"></div>
+      </section>
+      <div id="marswalk-auxiliary-views" aria-label="Additional synchronized flight cameras" hidden>
+        <section class="marswalk-auxiliary-view" aria-label="Top view">
+          <div id="marswalk-top-canvas"></div>
+          <div class="marswalk-auxiliary-heading">
+            <strong>TOP VIEW</strong><span>Overhead</span><small>Live overhead camera</small>
+          </div>
+        </section>
+        <section class="marswalk-auxiliary-view" aria-label="Side view">
+          <div id="marswalk-side-canvas"></div>
+          <div class="marswalk-auxiliary-heading">
+            <strong>SIDE VIEW</strong><span>Lateral</span><small>Live side camera</small>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <section id="telemetry-bar" class="hud-panel" aria-labelledby="telemetry-title">
+    <div class="panel-header-row">
+      <h2 id="telemetry-title"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M3 15c5 1 11-2 18-7M6 7l4 2-2 3 4 2 2 5"/></svg><span class="heading-neutral">Mars</span> Telemetry</h2>
+      <button id="minimize-telemetry" class="panel-minimize hud-btn secondary" type="button" aria-label="Minimize Telemetry" title="Minimize Telemetry">
+        <svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l6 6m0 0V6m0 4H6M20 20l-6-6m0 0v4m0-4h4"/></svg>
+      </button>
+    </div>
+    <dl class="telemetry-grid">
+      <dt>Latitude</dt><dd id="cursor-lat">—</dd>
+      <dt>Longitude</dt><dd id="cursor-lon">—</dd>
+      <dt>Camera altitude</dt><dd id="camera-alt">—</dd>
+    </dl>
+    <div class="panel-divider"></div>
+    <section id="location-inspector" aria-labelledby="location-title" aria-live="polite">
+      <h3 id="location-title"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-8 8-13a8 8 0 1 0-16 0c0 5 8 13 8 13Z"/><circle cx="12" cy="9" r="3"/></svg><span class="heading-neutral">Selected</span> Location</h3>
+      <p id="location-name" class="help-text">Click anywhere on Mars to inspect a location.</p>
+      <dl class="telemetry-grid location-grid">
+        <dt>Latitude</dt><dd id="selected-lat">—</dd>
+        <dt>Longitude</dt><dd id="selected-lon">—</dd>
+        <dt>To InSight station</dt><dd id="station-distance">—</dd>
+        <dt>MOLA elevation</dt><dd id="point-elevation">Not loaded</dd>
+        <dt>Local slope</dt><dd id="point-slope">Not loaded</dd>
+      </dl>
+      <button id="point-provenance" class="hud-btn secondary" type="button" disabled>Elevation provenance</button>
+      <p id="location-weather" class="status-text">This panel shows archived InSight station observations. Latest Available Curiosity Weather provides separate Gale Crater observations; neither station describes arbitrary points on Mars.</p>
+      <div class="jump-grid">
+        <button id="inspect-insight" class="hud-btn" type="button">Inspect InSight</button>
+        <button id="clear-location" class="hud-btn secondary" type="button">Clear Selection</button>
+      </div>
+    </section>
+    <div class="panel-divider"></div>
+    <h3 id="weather-heading">InSight Station · Reference</h3>
+    <p class="help-text station-location">Elysium Planitia · 4.5024°N, 135.6234°E</p>
+    <dl class="telemetry-grid">
+      <dt>Sol</dt><dd id="weather-sol">—</dd>
+      <dt>Mean temperature</dt><dd id="weather-temp">—</dd>
+      <dt>Mean pressure</dt><dd id="weather-pressure">—</dd>
+      <dt>Observed (UTC)</dt><dd id="weather-date">—</dd>
+    </dl>
+    <p id="weather-status" class="status-text" role="status">Requesting NASA data…</p>
+    <p class="help-text">Archived measurements at Elysium Planitia. InSight's mission ended in 2022; these are not current Mars weather.</p>
+    <a class="source-link" href="https://api.nasa.gov/insight_weather/?api_key=DEMO_KEY&amp;feedtype=json&amp;ver=1.0" target="_blank" rel="noopener noreferrer">NASA observation source ↗</a>
+  </section>
+  <aside id="control-panel" class="hud-panel" aria-labelledby="command-title">
+    <div class="panel-header-row">
+      <div class="panel-title-group">
+        <div class="panel-eyebrow-row">
+          <p class="eyebrow">NASA Space Apps · Mars Explorer</p>
+          <button id="minimize-controls" class="panel-minimize hud-btn secondary" type="button" aria-label="Minimize Controls" title="Minimize Controls">
+            <svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l6 6m0 0V6m0 4H6M20 20l-6-6m0 0v4m0-4h4"/></svg>
+          </button>
+        </div>
+        <h1 id="command-title">3D MARS GLOBE COMMAND CENTER</h1>
+      </div>
+    </div>
+    <button id="open-solar" class="hud-btn" type="button">Explore Solar System ↗</button>
+    <button id="open-dsn" class="hud-btn" type="button">DSN Now · Spacecraft Communications ↗</button>
+    <button id="open-rems" class="hud-btn" type="button">Latest Available Curiosity Weather ↗</button>
+    <button id="open-missions" class="hud-btn" type="button">Mission History ↗</button>
+    <button id="open-terrain" class="hud-btn" type="button">Terrain Explorer ↗</button>
+    <button id="open-marswalk" class="hud-btn marswalk-launch" type="button" aria-controls="marswalk-workspace" aria-expanded="false">MarsWalk · Surface Flythrough ↗</button>
+    <label for="basemap-select">Surface imagery</label>
+    <select id="basemap-select">
+      <option value="viking">USGS Viking Color Mosaic</option>
+      <option value="mola">MOLA Topographic Shaded Relief</option>
+    </select>
+    <p id="map-status" class="status-text" role="status">Initializing globe…</p>
+    <label class="globe-shading-option"><input id="globe-shading" type="checkbox" checked> Soft globe shading</label>
+    <p class="help-text">Illustrative lighting and stars. Shading fades when zoomed in and is disabled for MOLA.</p>
+    <section class="control-section" aria-labelledby="hirise-title">
+      <h2 id="hirise-title">HiRISE Close-Up</h2>
+      <label for="hirise-select">NASA orbital imagery overlay</label>
+      <select id="hirise-select">
+        <option value="off">Off — global basemap only</option>
+        <option value="gale">Gale Crater · Curiosity</option>
+        <option value="spirit">Gusev Crater · Spirit</option>
+        <option value="opportunity">Meridiani Planum · Opportunity</option>
+      </select>
+      <p id="hirise-status" class="status-text" role="status">Choose a site to load HiRISE and fly to its coverage.</p>
+      <div id="hirise-controls" hidden>
+        <label for="hirise-opacity">Overlay opacity <output id="hirise-opacity-value" for="hirise-opacity">100%</output></label>
+        <input id="hirise-opacity" type="range" min="0" max="100" step="5" value="100">
+        <button id="hirise-fly" class="hud-btn" type="button">Return to HiRISE Site</button>
+        <p class="help-text">Detailed grayscale imagery covers only the selected mosaic footprint. Gaps show CTX imagery at Gale where available, or the global basemap. This overlay does not add terrain elevation.</p>
+        <a id="hirise-source" class="source-link" target="_blank" rel="noopener noreferrer">NASA dataset metadata ↗</a>
+        <p class="help-text">HiRISE: NASA / JPL-Caltech / University of Arizona · Served by NASA Mars Trek.</p>
+      </div>
+    </section>
+    <button id="profiler-btn" class="hud-btn" type="button" aria-pressed="false" aria-controls="inspector-panel">Measure Distance Between Two Points</button>
+    <p id="profiler-instructions" class="help-text">Enable the measurement tool, then select two points on Mars.</p>
+    <section class="control-section" aria-labelledby="jump-title">
+      <h2 id="jump-title"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15 4 20l1-6M9 15l-3-3C9 6 15 3 21 3c0 6-3 12-9 15l-3-3Zm3 3 6 1-5 3"/><circle cx="15" cy="9" r="2"/></svg>Quick Jump</h2>
+      <div class="jump-grid">
+        <button id="jump-jezero" class="hud-btn" type="button"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M3 15c5 1 11-2 18-7M6 7l4 2-2 3 4 2 2 5"/></svg>Jezero Crater</button>
+        <button id="jump-gale" class="hud-btn" type="button"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 20 7-12 4 6 3-10 6 16H2Zm4-7 3 2 2-2"/></svg>Gale Crater</button>
+        <button id="jump-olympus" class="hud-btn" type="button"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 20 7-12 4 6 3-10 6 16H2Zm4-7 3 2 2-2"/></svg>Olympus Mons</button>
+        <button id="jump-valles" class="hud-btn" type="button"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9c4 0 4-6 8-6s4 6 8 6h4M2 18c4 0 4-6 8-6s4 6 8 6h4"/></svg>Valles Marineris</button>
+        <button id="jump-insight" class="hud-btn" type="button"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="8"/></svg>InSight Station</button>
+      </div>
+    </section>
+    <section id="inspector-panel" class="control-section" aria-labelledby="inspector-title" aria-live="polite" aria-atomic="true">
+      <h2 id="inspector-title"><svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 13-13 5 5L8 21Zm5-5 3 3m1-7 3 3"/></svg>Distance Inspector</h2>
+      <dl class="measurement-list">
+        <dt>Mars surface distance · R = 3389.5 km</dt><dd id="surface-distance">—</dd>
+        <dt>Ellipsoid geodesic path length</dt><dd id="geodesic-distance">—</dd>
+        <dt>Direct 3D chord distance</dt><dd id="chord-distance">—</dd>
+        <dt>Point A · latitude, longitude</dt><dd id="point-a">—</dd>
+        <dt>Point B · latitude, longitude</dt><dd id="point-b">—</dd>
+      </dl>
+      <p id="measurement-note" class="help-text">Distances use the reference sphere or ellipsoid and exclude terrain relief. Coarse-grid MOLA analysis is available separately.</p>
+      <button id="clear-profiler" class="hud-btn secondary" type="button">Clear Measurement</button>
+    </section>
+    <p class="help-text navigation-help">Drag to rotate · Scroll to zoom · Ctrl + drag to tilt. Select a landing-site marker for mission details. Press Escape to exit the measurement tool.</p>
+    <footer class="attribution">Rendering: <a href="https://cesium.com/" target="_blank" rel="noopener noreferrer">CesiumJS</a> · Viking imagery: <a href="https://astro.arcgis.com/arcgis/rest/services/OnMars/MDIM/MapServer" target="_blank" rel="noopener noreferrer">NASA / JPL / USGS / Esri</a> · MOLA: <a href="https://planetarymaps.usgs.gov/" target="_blank" rel="noopener noreferrer">NASA / USGS Astrogeology</a> · Weather: <a href="https://api.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA</a></footer>
+  </aside>
+  <button id="restore-telemetry" class="panel-restore panel-restore-left" type="button" aria-label="Restore Telemetry" title="Restore Telemetry">
+    <span class="panel-restore-label">Telemetry</span>
+    <svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="13 13 7 7"/><polyline points="6 8 6 6 8 6"/><polyline points="13 13 17 17"/><polyline points="16 18 18 18 18 16"/></svg>
+  </button>
+  <button id="restore-controls" class="panel-restore panel-restore-right" type="button" aria-label="Restore Controls" title="Restore Controls">
+    <span class="panel-restore-label">Controls</span>
+    <svg class="hud-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="13 13 7 7"/><polyline points="6 8 6 6 8 6"/><polyline points="13 13 17 17"/><polyline points="16 18 18 18 18 16"/></svg>
+  </button>
+  <aside id="marswalk-workspace" class="hud-panel" aria-labelledby="marswalk-title" hidden>
+    <header class="marswalk-header">
+      <div><p class="eyebrow">MARS SURFACE EXPLORER</p><h2 id="marswalk-title">MarsWalk</h2></div>
+      <div class="marswalk-exit-actions">
+        <button id="close-marswalk" class="hud-btn secondary" type="button">Exit</button>
+        <details class="marswalk-exit-menu">
+          <summary aria-label="More exit options" title="More exit options">···</summary>
+          <button id="marswalk-restore-camera" class="hud-btn secondary" type="button">Exit and restore previous view</button>
+        </details>
+      </div>
+    </header>
+    <section class="marswalk-section" aria-labelledby="marswalk-display-title">
+      <h3 id="marswalk-display-title">1. Surface Style</h3>
+      <label for="marswalk-region">Regional coverage<select id="marswalk-region"><option value="">Choose a region</option></select></label>
+      <p id="marswalk-selection-help" class="status-text" role="status" aria-live="polite">Choose a region to load its terrain.</p>
+      <details class="marswalk-disclosure">
+        <summary>Quick presets</summary>
+        <div class="marswalk-preset-row">
+          <label for="marswalk-preset">Exploration<select id="marswalk-preset"><option value="">Choose a preset</option></select></label>
+          <button id="marswalk-load-preset" class="hud-btn secondary" type="button">Use preset</button>
+        </div>
+        <p id="marswalk-preset-info" class="help-text" hidden></p>
+      </details>
+      <label>Surface appearance</label>
+      <div class="marswalk-surface-options" role="radiogroup" aria-label="Surface style">
+        <label><input type="radio" name="marswalk-surface-style" value="terrain-explorer" checked><span>Terrain Explorer</span></label>
+        <label><input type="radio" name="marswalk-surface-style" value="imagery"><span>MOLA / THEMIS</span></label>
+        <label><input type="radio" name="marswalk-surface-style" value="elevation"><span>Elevation Only</span></label>
+      </div>
+      <select id="marswalk-display-mode" class="marswalk-state-select" aria-hidden="true" tabindex="-1">
+        <option value="terrain-explorer" selected>Terrain Explorer</option>
+        <option value="imagery">MOLA/THEMIS</option>
+        <option value="elevation">Elevation Only</option>
+      </select>
+      <div id="marswalk-style-loading" class="marswalk-style-loading" role="status" aria-live="polite" hidden>
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span id="marswalk-style-loading-text">Loading MOLA / THEMIS imagery from USGS…</span>
+      </div>
+      <p id="marswalk-display-status" class="help-text" role="status" aria-live="polite">Surface appearance only · DEM geometry is unchanged.</p>
+      <details class="marswalk-disclosure">
+        <summary>Terrain display options</summary>
+        <label class="marswalk-checkbox" for="marswalk-wireframe">
+          <input id="marswalk-wireframe" type="checkbox"> Show triangle wireframe
+        </label>
+        <button id="marswalk-reset-view" class="hud-btn secondary" type="button">Reset terrain view</button>
+      </details>
+      <span id="marswalk-terrain-title" class="sr-only" hidden>Regional Coverage</span>
+    </section>
+    <section class="marswalk-section" aria-labelledby="marswalk-mode-title">
+      <h3 id="marswalk-mode-title">2. Flight Profile</h3>
+      <input id="marswalk-mode" type="hidden" value="cinematic">
+      <div class="marswalk-profile-options" role="radiogroup" aria-label="Flight profile">
+        <label title="Lower, terrain-following route profile"><input type="radio" name="marswalk-profile" value="follow"><span>Terrain Follow</span></label>
+        <label title="Balanced flight height and camera framing"><input type="radio" name="marswalk-profile" value="cinematic" checked><span>Cinematic</span></label>
+        <label title="Higher flight profile for regional overview"><input type="radio" name="marswalk-profile" value="overview"><span>High-altitude Overview</span></label>
+      </div>
+      <details id="marswalk-advanced-settings" class="marswalk-disclosure">
+        <summary>Advanced flight settings <span id="marswalk-profile-label">Cinematic defaults</span></summary>
+        <label for="marswalk-clearance">Minimum terrain clearance <output id="marswalk-clearance-value" for="marswalk-clearance">4,200 m</output>
+          <input id="marswalk-clearance" type="range" min="500" max="30000" step="100" value="4200">
+        </label>
+        <label for="marswalk-max-altitude">Maximum flight height · m
+          <input id="marswalk-max-altitude" type="number" min="10000" max="200000" step="1000" value="100000">
+        </label>
+        <label for="marswalk-smoothness">Route smoothing <output id="marswalk-smoothness-value" for="marswalk-smoothness">0.40</output>
+          <input id="marswalk-smoothness" type="range" min="0" max="0.8" step="0.05" value="0.4">
+        </label>
+      </details>
+    </section>
+    <section class="marswalk-section" aria-labelledby="marswalk-points-title">
+      <h3 id="marswalk-points-title">3. Plan Route</h3>
+      <form id="marswalk-coordinate-form">
+        <button id="marswalk-select-points" class="hud-btn secondary marswalk-pick-button" type="button" aria-pressed="false">Select points on terrain</button>
+        <dl class="marswalk-endpoint-summary" aria-label="Selected journey endpoints">
+          <dt>Start</dt><dd id="marswalk-start-summary">Not selected</dd>
+          <dt>Destination</dt><dd id="marswalk-dest-summary">Not selected</dd>
+        </dl>
+        <div class="marswalk-inline-actions">
+          <button id="marswalk-swap" class="marswalk-text-action" type="button" title="Swap start and destination">Swap</button>
+          <button id="marswalk-clear" class="marswalk-text-action" type="button" title="Clear endpoints and route">Clear</button>
+        </div>
+        <details class="marswalk-disclosure">
+          <summary>Manual coordinates</summary>
+          <div class="marswalk-coordinate-grid">
+            <label for="marswalk-start-lat">Start latitude<input id="marswalk-start-lat" type="number" min="-90" max="90" step="any" placeholder="Latitude °" required></label>
+            <label for="marswalk-start-lon">Start longitude<input id="marswalk-start-lon" type="number" min="-360" max="360" step="any" placeholder="Longitude °" required></label>
+            <label for="marswalk-dest-lat">Destination latitude<input id="marswalk-dest-lat" type="number" min="-90" max="90" step="any" placeholder="Latitude °" required></label>
+            <label for="marswalk-dest-lon">Destination longitude<input id="marswalk-dest-lon" type="number" min="-360" max="360" step="any" placeholder="Longitude °" required></label>
+          </div>
+          <p class="help-text">Planetographic latitude · east-positive longitude</p>
+        </details>
+        <button id="marswalk-plan" class="hud-btn marswalk-primary-action" type="submit" disabled>Plan Route</button>
+      </form>
+    </section>
+    <section class="marswalk-section" aria-labelledby="marswalk-controls-title">
+      <h3 id="marswalk-controls-title">4. Flight Control</h3>
+      <button id="marswalk-play" class="hud-btn marswalk-primary-action" type="button" disabled>Start Journey</button>
+      <label class="marswalk-speed-control" for="marswalk-speed">Speed<select id="marswalk-speed">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option>
+        <option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+      </select></label>
+      <p id="marswalk-status" class="status-text" role="status" aria-live="polite">Select a regional DEM patch to plan a local surface journey.</p>
+      <dl id="marswalk-route-summary" class="marswalk-route-summary" aria-label="Route summary">
+        <dt>Distance</dt><dd id="marswalk-distance">—</dd>
+        <dt>Duration</dt><dd id="marswalk-duration">—</dd>
+        <dt>Maximum altitude</dt><dd id="marswalk-flight-max">—</dd>
+      </dl>
+      <details id="marswalk-route-details" class="marswalk-disclosure">
+        <summary>Route details</summary>
+        <p id="marswalk-point-data" class="help-text">Endpoint elevations appear after planning.</p>
+        <dl class="marswalk-stats">
+          <dt>Direct distance</dt><dd id="marswalk-direct-distance">—</dd>
+          <dt>Maximum terrain elevation</dt><dd id="marswalk-terrain-max">—</dd>
+          <dt>Minimum sampled clearance</dt><dd id="marswalk-min-clearance">—</dd>
+          <dt>Maximum lateral deviation</dt><dd id="marswalk-deviation">—</dd>
+          <dt>Sampled ascent / descent</dt><dd id="marswalk-ascent">—</dd>
+          <dt>Route / terrain samples</dt><dd id="marswalk-coverage">—</dd>
+        </dl>
+        <div class="marswalk-legend" aria-label="Route symbols">
+          <span><i class="legend-line planned"></i> Planned flight</span>
+          <span><i class="legend-line baseline"></i> Direct surface projection</span>
+          <span><i class="legend-dot"></i> Current position</span>
+        </div>
+        <label for="marswalk-progress">Progress <output id="marswalk-progress-value" for="marswalk-progress">0%</output>
+          <input id="marswalk-progress" type="range" min="0" max="1000" step="1" value="0" disabled>
+        </label>
+        <dl class="marswalk-live-stats">
+          <dt>Current position</dt><dd id="marswalk-current-position">—</dd>
+          <dt>Distance remaining</dt><dd id="marswalk-remaining">—</dd>
+          <dt>Terrain / clearance</dt><dd id="marswalk-current-terrain">—</dd>
+        </dl>
+      </details>
+      <details id="marswalk-inspection-details" class="marswalk-disclosure">
+        <summary>Terrain inspection</summary>
+        <dl id="marswalk-inspection-values" class="marswalk-live-stats" hidden>
+          <dt>Latitude</dt><dd id="marswalk-inspect-lat">—</dd>
+          <dt>Longitude</dt><dd id="marswalk-inspect-lon">—</dd>
+          <dt>MOLA elevation</dt><dd id="marswalk-inspect-elevation">—</dd>
+          <dt>Height relative to patch center</dt><dd id="marswalk-inspect-local-height">—</dd>
+          <dt>Mesh vs DEM query</dt><dd id="marswalk-inspect-mesh-delta">—</dd>
+          <dt>Picked surface − mesh</dt><dd id="marswalk-inspect-render-delta">—</dd>
+        </dl>
+        <p id="marswalk-inspection-help" class="help-text" hidden></p>
+      </details>
+      <details class="marswalk-disclosure">
+        <summary>Technical details</summary>
+        <p id="marswalk-mesh-info" class="help-text">DEM posting and mesh dimensions appear after a regional patch is loaded.</p>
+        <p id="marswalk-source-note" class="help-text">Terrain uses bundled regional MOLA MEGDR samples.</p>
+      </details>
+    </section>
+  </aside>
+  <section id="site-popup" class="hud-panel" role="dialog" aria-labelledby="site-title" hidden>
+    <button id="close-popup" class="close-btn" type="button" aria-label="Close overview">×</button>
+    <p id="site-category" class="eyebrow">Surface Mission</p><h2 id="site-title"></h2>
+    <p id="site-mission" class="mission-name"></p><p id="site-description"></p>
+    <dl id="site-facts" class="measurement-list" hidden></dl>
+    <p id="site-coordinates" class="coordinate-text"></p>
+    <a id="site-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>NASA overview and measurements ↗</a>
+    <a id="site-media" class="source-link" aria-haspopup="dialog">Images &amp; videos of this location ↗</a>
+  </section>
+  <section id="rems-panel" class="hud-panel" role="dialog" aria-labelledby="rems-title" hidden>
+    <button id="close-rems" class="close-btn" type="button" aria-label="Close weather overview">×</button>
+    <p class="eyebrow">NASA · Mars Science Laboratory · Gale Crater</p>
+    <h2 id="rems-title">Latest Available Curiosity Weather</h2>
+    <p class="help-text station-location">Curiosity's Rover Environmental Monitoring Station · 4.58°S, 137.44°E</p>
+    <dl class="telemetry-grid">
+      <dt>Sol</dt><dd id="rems-sol">—</dd>
+      <dt>Earth date</dt><dd id="rems-date">—</dd>
+      <dt>Solar longitude · season</dt><dd id="rems-ls">—</dd>
+      <dt>Air temperature · low / high</dt><dd id="rems-temps">—</dd>
+      <dt>Ground temperature · low / high</dt><dd id="rems-ground">—</dd>
+      <dt>Pressure</dt><dd id="rems-pressure">—</dd>
+      <dt>Sky</dt><dd id="rems-sky">—</dd>
+      <dt>UV index</dt><dd id="rems-uv">—</dd>
+      <dt>Sunrise · sunset</dt><dd id="rems-sun">—</dd>
+    </dl>
+    <p id="rems-status" class="status-text" role="status">Open this overview to load NASA's REMS feed.</p>
+    <div class="panel-divider"></div>
+    <h3>Recent sols</h3>
+    <table class="rems-table">
+      <thead><tr><th>Sol</th><th>Earth date</th><th>Low °C</th><th>High °C</th><th>Pressure Pa</th></tr></thead>
+      <tbody id="rems-history"></tbody>
+    </table>
+    <p class="help-text">Curiosity measures this weather with REMS at Gale Crater. NASA publishes delayed observations through its public Mars weather feed. Temperature fields show daily minima and maxima; pressure is a daily average. Check the observation date and age: these are not live readings. Missing or invalid fields are shown as —. Wind speed and humidity are not included in this feed.</p>
+    <div class="jump-grid rems-actions">
+      <button id="rems-refresh" class="hud-btn" type="button">Refresh feed</button>
+      <a class="hud-btn secondary" href="https://mars.nasa.gov/rss/api/?feed=weather&amp;category=msl&amp;feedtype=json" target="_blank" rel="noopener noreferrer">NASA REMS source ↗</a>
+    </div>
+  </section>
+  <div id="fatal-error" class="hud-panel error-panel" role="alert" hidden></div>
+  <div id="cesium-credits" hidden></div>
+  <section id="solar-view" role="dialog" aria-modal="true" aria-labelledby="solar-title" hidden>
+    <canvas id="solar-canvas" aria-label="Rotatable three-dimensional solar-system model. Drag to rotate and scroll to zoom."></canvas>
+    <div class="solar-header">
+      <div><p class="eyebrow">Our place in the Solar System</p><h2 id="solar-title">From Mars to the Sun &amp; Earth</h2></div>
+      <button id="close-solar" class="hud-btn" type="button">← Return to Mars</button>
+    </div>
+    <aside class="solar-panel hud-panel">
+      <h3>Mars Distance Reference</h3>
+      <label for="solar-date">Model date · 12:00 UTC</label>
+      <input id="solar-date" type="date" min="1800-01-01" max="2049-12-31">
+      <div class="jump-grid">
+        <button id="solar-today" class="hud-btn" type="button">Today</button>
+        <button id="solar-inner" class="hud-btn" type="button">Inner Planets</button>
+        <button id="solar-all" class="hud-btn" type="button">All 8 Planets</button>
+        <button id="solar-reset" class="hud-btn" type="button">Reset View</button>
+      </div>
+      <dl class="solar-distances" aria-live="polite">
+        <dt class="mars-line">Mars ↔ Sun</dt><dd id="distance-mars-sun">—</dd>
+        <dt class="earth-line">Mars ↔ Earth</dt><dd id="distance-mars-earth">—</dd>
+        <dt class="sun-line">Earth ↔ Sun</dt><dd id="distance-earth-sun">—</dd>
+        <dt>Earth–Mars one-way light time</dt><dd id="solar-light-time">—</dd>
+      </dl>
+      <p id="solar-status" class="status-text" role="status"></p>
+      <p class="help-text">Approximate geometric distances, not live tracking. “Earth” uses the Earth–Moon barycenter. UTC approximates the model's dynamical time.</p>
+      <a class="source-link" href="https://ssd.jpl.nasa.gov/planets/approx_pos.html" target="_blank" rel="noopener noreferrer">NASA/JPL orbital model ↗</a>
+    </aside>
+    <div class="solar-caption"><strong>Drag to orbit · Scroll to zoom</strong><br>Orbit distances are proportional. Sun and planet sizes are enlarged; colors are illustrative.<br>Gold: Earth–Sun · Coral: Mars–Sun · Cyan: Earth–Mars</div>
+  </section>
+  <dialog id="dsn-panel" aria-labelledby="dsn-heading">
+    <header class="media-header"><div><p class="eyebrow">NASA / JPL · Deep Space Network</p><h2 id="dsn-heading">DSN Now</h2></div><button id="close-dsn" class="hud-btn secondary" type="button">Return to Mars</button></header>
+    <p class="help-text">Earth antennas communicating with spacecraft across the Solar System. Uplink sends signals to spacecraft; downlink receives them. An active signal does not necessarily carry science data.</p>
+    <div class="dsn-controls"><label><input id="dsn-mars" type="checkbox"> Mars-related missions only</label><button id="dsn-refresh" class="hud-btn" type="button">Refresh now</button></div>
+    <p id="dsn-status" class="status-text" role="status">Open this panel to request NASA station data.</p>
+    <div id="dsn-stations"></div>
+    <p class="help-text">Refreshes every 15 seconds while this panel and browser tab are visible. Source data older than two minutes is marked stale. Inactive signals may include old data rates, which are not displayed as current traffic. Missing antennas or signals do not establish mission health. The Mars filter includes known Mars mission codes, including cruise missions.</p>
+    <a class="source-link" href="https://eyes.nasa.gov/apps/dsn-now/" target="_blank" rel="noopener noreferrer">Open NASA DSN Now ↗</a>
+  </dialog>
+  <dialog id="science-panel" aria-labelledby="science-heading">
+    <header class="media-header">
+      <div><p class="eyebrow">NASA / PDS · Mission records and terrain</p><h2 id="science-heading">Mars Science Explorer</h2></div>
+      <button id="close-science" class="hud-btn secondary" type="button">Return to Mars</button>
+    </header>
+    <section id="timeline-view" class="science-view" aria-label="Mission History">
+      <p class="help-text">Curated NASA surface-mission milestones from 1976 onward. This is static reference metadata, not live mission telemetry or an exhaustive world-wide catalog.</p>
+      <div class="science-filters">
+        <label for="mission-search">Search missions<input id="mission-search" type="search" maxlength="80" placeholder="Mission or landing site"></label>
+        <label for="mission-status-filter">Status<select id="mission-status-filter"><option value="">All statuses</option><option>Operational</option><option>Mission ended</option><option>Landing unsuccessful</option></select></label>
+        <label for="mission-type-filter">Type<select id="mission-type-filter"><option value="">All types</option><option>Rover</option><option>Lander</option><option>Lander / rover</option></select></label>
+        <label for="mission-decade-filter">Landing decade<select id="mission-decade-filter"><option value="">All decades</option><option value="1970">1970s</option><option value="1980">1980s</option><option value="1990">1990s</option><option value="2000">2000s</option><option value="2010">2010s</option><option value="2020">2020s</option></select></label>
+      </div>
+      <div class="science-columns">
+        <ul id="mission-list" class="mission-list" aria-label="Mars surface missions"></ul>
+        <article id="mission-detail" class="science-card" aria-live="polite"><p class="help-text">Select a mission to review its dates, status, landing reference, and source.</p></article>
+      </div>
+      <section id="provenance-panel" class="science-card provenance-card" hidden aria-labelledby="provenance-title">
+        <button id="close-provenance" class="hud-btn secondary" type="button">Close provenance</button>
+        <h3 id="provenance-title">Data provenance</h3>
+        <dl id="provenance-content" class="telemetry-grid"></dl>
+      </section>
+    </section>
+    <section id="terrain-view" class="science-view" aria-label="Terrain Explorer" hidden>
+      <section class="science-card regional-terrain" aria-labelledby="regional-terrain-title">
+        <h3 id="regional-terrain-title">Interactive 3D regional surface</h3>
+        <p class="help-text">Choose a curated mission or landmark region for a MOLA 128-pixel/degree terrain patch, or enter coordinates for a coarser global MOLA preview. Drag the model to rotate; scroll to zoom. These elevation data show regional shape, not rover-scale rocks or hazards.</p>
+        <div class="science-actions regional-terrain-controls">
+          <label for="terrain-region-select">Preset region or coordinates<select id="terrain-region-select"><option value="">Choose a region</option></select></label>
+          <label for="terrain-patch-size">Model width<select id="terrain-patch-size"><option value="25">25 km</option><option value="50" selected>50 km</option><option value="100">100 km</option></select></label>
+          <button id="load-terrain-model" class="hud-btn" type="button" disabled>Load 3D terrain model</button>
+          <button id="reset-terrain-model" class="hud-btn secondary" type="button" disabled>Reset view</button>
+        </div>
+        <form id="custom-terrain-form" class="science-actions waypoint-form" hidden>
+          <label for="terrain-center-latitude">Center latitude · planetographic degrees<input id="terrain-center-latitude" type="number" min="-89" max="89" step="0.0001" required></label>
+          <label for="terrain-center-longitude">Center longitude · east-positive degrees<input id="terrain-center-longitude" type="number" min="-180" max="180" step="0.0001" required></label>
+        </form>
+        <p id="terrain-model-status" class="status-text" role="status">Select a preset or custom coordinates to load a regional surface.</p>
+        <figure class="terrain-model-figure">
+          <canvas id="terrain-model-canvas" tabindex="0" role="img" aria-label="Interactive three-dimensional Mars terrain model. Drag to rotate, scroll to zoom, or use arrow keys."></canvas>
+          <figcaption id="terrain-model-caption" class="help-text">The model is an elevation mesh. Its vertical relief is exaggerated for visibility; the real elevation values are unchanged.</figcaption>
+        </figure>
+        <p class="help-text">Preset source: <a href="https://pds-geosciences.wustl.edu/missions/mgs/megdr.html" target="_blank" rel="noopener noreferrer">NASA MOLA MEGDR archive</a> · NASA / MOLA Science Team / PDS Geosciences Node.</p>
+      </section>
+    </section>
+  </dialog>
+  <dialog id="media-library" aria-labelledby="media-heading">
+    <header class="media-header">
+      <div><p class="eyebrow">NASA archives · Images and films</p><h2 id="media-heading">Explore the NASA Library</h2></div>
+      <button id="close-media" class="hud-btn secondary" type="button">Close library</button>
+    </header>
+    <form id="media-form">
+      <div><label for="media-query">Search NASA media</label><input id="media-query" type="search" value="Mars" maxlength="200" placeholder="Mars, Perseverance, Olympus Mons…"></div>
+      <div><label for="media-type">Media type</label><select id="media-type"><option value="image,video">Images and videos</option><option value="image">Images</option><option value="video">Videos</option></select></div>
+      <button class="hud-btn" type="submit">Search</button>
+    </form>
+    <p id="media-status" class="status-text" role="status">Search NASA's image and video archive.</p>
+    <section id="media-detail" aria-labelledby="media-title" hidden>
+      <h3 id="media-title" tabindex="-1"></h3>
+      <p id="media-credit" class="help-text"></p>
+      <div id="media-player"></div>
+      <p id="media-detail-status" class="status-text" role="status"></p>
+      <p id="media-description"></p>
+      <div class="media-links"><a id="media-source" target="_blank" rel="noopener noreferrer">View on NASA ↗</a><a id="media-file" target="_blank" rel="noopener noreferrer" hidden>Open media file ↗</a></div>
+    </section>
+    <div id="media-results" class="media-grid" aria-label="NASA search results" aria-busy="false"></div>
+    <nav class="media-pagination" aria-label="Search result pages"><button id="media-prev" class="hud-btn secondary" type="button" disabled>Previous page</button><button id="media-next" class="hud-btn secondary" type="button" disabled>Next page</button></nav>
+    <p class="help-text">Source: <a href="https://images.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA Image and Video Library</a>. Historical imagery, illustrations, and videos; these are not live views. Refer to each item's NASA page for credits and usage information.</p>
+  </dialog>
+  <noscript><div class="hud-panel error-panel">JavaScript is required to display the Mars globe.</div></noscript>
+</body>
+</html>
